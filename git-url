@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# git-url prints a URL to a file
+# usage
+# git url <path_to_file> [remote]
+
+if [ -z "$1" ]; then
+    echo "usage error. usage: git url <path_to_file> [remote]"
+    exit 1
+fi
+
+if [ ! -f "$1" ]; then
+    echo "no such file error. usage: git url <path_fo_file> [remote]"
+    exit 1
+fi
+
+cd -- ${GIT_PREFIX:-.}
+
+remote=origin
+if [ ! -z "$2" ]; then
+    remote=$2
+fi
+
+remote_url=$(git remote get-url $remote | sed 's/\.git//g')
+
+if [ "$(echo $remote_url | grep 'git@' | wc -l)" == "1" ]; then
+    remote_url=$(echo $remote_url | sed 's|:|/|g')
+    remote_url=$(echo $remote_url | sed 's|git@|https://|g')
+fi
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+
+relative_file_path=$(git ls-files --full-name $1)
+
+echo $remote_url/blob/$branch/$relative_file_path
