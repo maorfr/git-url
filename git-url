@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # git-url prints a URL to a file
 # usage
@@ -15,8 +16,10 @@ if [ ! -f "$1" ]; then
 fi
 
 cd -- ${GIT_PREFIX:-.}
+branch=$(git rev-parse --abbrev-ref HEAD@{push} 2>/dev/null || echo "origin/master")
 
-remote=origin
+remote=${branch%%/*}
+branch=${branch#*/}
 if [ ! -z "$2" ]; then
     remote=$2
 fi
@@ -28,7 +31,7 @@ if [ "$(echo $remote_url | grep 'git@' | wc -l)" == "1" ]; then
     remote_url=$(echo $remote_url | sed 's|git@|https://|g')
 fi
 
-branch=$(git rev-parse --abbrev-ref HEAD)
+
 
 relative_file_path=$(git ls-files --full-name $1)
 
