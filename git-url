@@ -1,38 +1,65 @@
 #!/bin/bash
 set -e
 
-# git-url prints a URL to a file
-# usage
-# git url <path_to_file> [remote]
+usage() {
+    cat <<EOF
+git-url prints a URL to a file/directory/branch
 
-if [ -z "$1" ]; then
-    echo "usage error. usage: git url <path_to_file> [remote]"
-    exit 1
-fi
+Usage: git-url [-r remote] [path]
+-r             specify git remote to use (default: your push-tracking remote)
+path           file or directory (default: none, prints URL to branch)
+EOF
+}
 
-if [ ! -f "$1" ]; then
-    echo "no such file error. usage: git url <path_fo_file> [remote]"
-    exit 1
-fi
+# get args
+while getopts ":r:h" opt; do
+    case $opt in
+        r) override_remote=$OPTARG && git remote get-url $override_remote 1> /dev/null;; # check if remote exists
+        h) usage && exit 0;;
+        *) usage && exit 1;;
+    esac
+done
+shift $((OPTIND-1))
 
+path=${1-}
+
+# get remote and branch
 cd -- ${GIT_PREFIX:-.}
-branch=$(git rev-parse --abbrev-ref HEAD@{push} 2>/dev/null || echo "origin/master")
+remote_tracking_branch=$(git rev-parse --abbrev-ref HEAD@{push} 2>/dev/null || echo "origin/master") # e.g. origin/master
 
-remote=${branch%%/*}
-branch=${branch#*/}
-if [ ! -z "$2" ]; then
-    remote=$2
+branch=${remote_tracking_branch#*/} # e.g. master
+if [ -z "$override_remote" ]; then
+    remote=${remote_tracking_branch%%/*} # e.g. origin
+else
+    remote=$override_remote
 fi
 
-remote_url=$(git remote get-url $remote | sed 's/\.git//g')
+# get and normalize remote URL
+remote_url=$(git remote get-url $remote | sed 's/\.git//g') # e.g. https://github.com/maorfr/git-url or git@github.com:maorfr/git-url
 
 if [[ "$remote_url" == *"git@"* ]]; then
-    remote_url=$(echo $remote_url | sed 's|:|/|g')
-    remote_url=$(echo $remote_url | sed 's|git@|https://|g')
+    remote_url=$(echo $remote_url | sed 's|:|/|g') # e.g. git@github.com/maorfr/git-url
+    remote_url=$(echo $remote_url | sed 's|git@|https://|g') # e.g. https://github.com/maorfr/git-url
 fi
 
+# construct full URL for all cases
+if [[ -z $path ]]; then
+    echo "$remote_url/tree/$branch"
+elif [[ -f $path ]]; then
+    relative_path=$(git ls-files --full-name $path)
+    echo "${remote_url}/blob/${branch}/${relative_path}"
+elif [[ -d $path ]]; then
+    # no way to get path to dir relative to git root, so use cd + git rev-parse --show-prefix
+    # this approach does not mix shell with git commands (using only git, no pwd or realpath), allowing to work even on git-bash in MINGW, without cygpath
 
+    repo_dir_current=$(git rev-parse --show-toplevel) # since we may go OUT of the current repository, save to check
+    cd $path
+    repo_dir_after_cd=$(git rev-parse --show-toplevel 2> /dev/null) || true
+    [[ "$repo_dir_current" != "$repo_dir_after_cd" ]] && echo "error: '$path' is outside of git repo" >&2 && exit 1
 
-relative_file_path=$(git ls-files --full-name $1)
-
-echo $remote_url/blob/$branch/$relative_file_path
+    relative_path=$(git rev-parse --show-prefix)
+    echo "${remote_url}/tree/${branch}/${relative_path}"
+else
+    echo "error: '$path' does not exist, or is not a file or directory tracked by git" >&2
+    exit 1
+fi
